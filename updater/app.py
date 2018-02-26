@@ -22,11 +22,14 @@ import time
 os.environ['TZ'] = 'UTC'
 
 app = Flask(__name__)
-app.config.from_pyfile("{}/app.cfg".format(os.getcwd()))
+#app.config.from_pyfile("{}/app.cfg".format(os.getcwd()))
+print("{}/../app.cfg".format(os.path.dirname(os.path.abspath(__file__))))
+app.config.from_pyfile("{}/../app.cfg".format(os.path.dirname(os.path.abspath(__file__))))
 app.json_encoder = GerritJSONEncoder
 
 db = MongoEngine(app)
 cache = Cache(app)
+cache_to = 1
 gerrit = GerritServer(app.config['GERRIT_URL'])
 
 def api_key_required(f):
@@ -55,6 +58,7 @@ def addrom(filename, device, version, datetime, romtype, md5sum, size, url):
 @click.option('--filename', '-f', 'filename', required=True)
 def delrom(filename):
     Rom.objects(filename=filename).delete()
+    print('Rom Deleted: {0}'.format(filename))
 
 @app.cli.command()
 @click.option('--filename', '-f', 'filename', required=True)
@@ -75,6 +79,10 @@ def addinc(filename, device, version, datetime, romtype, md5sum, size, url, from
 def delinc(filename):
     Incremental.objects(filename=filename).delete()
 
+@app.cli.command()
+def purgecache():
+    cache.clear()
+    print('Cache cleared')
 
 @app.cli.command()
 @click.option("--comment", 'comment', required=False)
@@ -120,7 +128,7 @@ def check_builds():
         if requests.head(r.url).status_code == 404:
             print("Rom.objects(filename=\"{}\").delete()".format(r.filename))
 
-@cache.memoize(timeout=3600)
+@cache.memoize(timeout=cache_to)
 def get_build_types(device, romtype, after, version, incrementalversion):
     roms = []
 
@@ -157,7 +165,7 @@ def index(device, romtype, incrementalversion):
     return get_build_types(device, romtype, after, version, incrementalversion)
 
 @app.route('/api/v1/types/<string:device>/')
-@cache.cached(timeout=3600)
+@cache.cached(timeout=cache_to)
 def get_types(device):
     types = set(["nightly"])
     for rtype in Rom.get_types(device):
@@ -241,7 +249,7 @@ def del_incremental(filename):
 @app.route('/api/v1/changes/<device>/')
 @app.route('/api/v1/changes/<device>/<int:before>/')
 @app.route('/api/v1/changes/<device>/-1/')
-@cache.cached(timeout=3600)
+@cache.cached(timeout=cache_to)
 def changes(device='all', before=-1):
     if device == 'all':
         device = None
@@ -250,14 +258,14 @@ def changes(device='all', before=-1):
 @app.route('/<device>/changes/<int:before>/')
 @app.route('/<device>/changes/')
 @app.route('/')
-@cache.cached(timeout=3600)
+@cache.cached(timeout=cache_to)
 def show_changelog(device='all', before=-1):
     devices = sorted([x for x in Device.get_devices() if x['model'] in Rom.get_devices()], key=lambda device: device['name'])
     oems = sorted(list(set([x['oem'] for x in devices])))
     return render_template('changes.html', active_device=None, oems=oems, devices=devices, device=device, before=before, changelog=True)
 
 @app.route('/api/v1/devices')
-@cache.cached(timeout=3600)
+@cache.cached(timeout=cache_to)
 def api_v1_devices():
     return jsonify(Rom.get_current_devices_by_version())
 
@@ -274,7 +282,7 @@ def purge_cache():
     return 'ok', 200
 
 @app.route("/<string:device>")
-@cache.cached(timeout=3600)
+@cache.cached(timeout=cache_to)
 def web_device(device):
     devices = sorted([x for x in Device.get_devices() if x['model'] in Rom.get_devices()], key=lambda device: device['name'])
     oems = sorted(list(set([x['oem'] for x in devices])))
@@ -290,7 +298,7 @@ def web_device(device):
             wiki_info=app.config['WIKI_INFO_URL'], wiki_install=app.config['WIKI_INSTALL_URL'])
 
 @app.route("/extras")
-@cache.cached(timeout=3600)
+@cache.cached(timeout=cache_to)
 def web_extras():
     devices = sorted([x for x in Device.get_devices() if x['model'] in Rom.get_devices()], key=lambda device: device['name'])
     oems = sorted(list(set([x['oem'] for x in devices])))
